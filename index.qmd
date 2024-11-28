@@ -1,0 +1,651 @@
+---
+title: "Aves Guanacaste"
+author: "Paulina Balcázar y Laura Villegas"
+format: html
+toc: true
+theme: sketchy
+---
+
+# Cargar librerías
+```{r}
+#| label: carga-librerias
+#| warning: false
+#| message: false
+
+# Cargar tmap
+library(tmap)
+
+# Colección de paquetes de Tidyverse
+library(tidyverse)
+
+# Estilos para ggplot2
+library(ggthemes)
+
+# Paletas de colores de RColorBrewer
+library(RColorBrewer)
+
+# Paletas de colores de viridis
+library(viridisLite)
+
+# Gráficos interactivos
+library(plotly)
+
+# Manejo de datos vectoriales
+library(sf)
+
+# Manejo de datos raster
+library(terra)
+
+# Manejo de datos raster
+library(raster)
+
+# Mapas interactivos
+library(leaflet)
+
+# Acceso a datos en GBIF
+library(rgbif)
+
+# Datos geoespaciales
+library(geodata)
+
+# Modelado de distribución de especies
+library(dismo)
+
+# Manejo datos Maxent
+library(rJava)
+
+# Cargar la librería de widgets 
+library(htmlwidgets)
+```
+# Contexto 
+Los datos de este estudio  se obtuvieron de tres fuentes distintas: 
+
+* eBird: que es una plataforma de ciencia ciudadana que recopila, almacena y analiza datos de aves de personas observadoras en todo el mundo.  
+
+* WorldClim: proporciona datos climáticos a nivel mundial, estos incluyen variable climáticas como tempertura, precipitación, radiación solar, humedad relativa y otros factores importantes para la modelación climatológica y ecológica. 
+
+* HydroSHED: que tiene datos acerca del flujo del agua, acumulación de flujo, cuencas hidrológicas, río y lagos y permiten el análisis detallado sobre los sistemas hidrográficos a escala global.
+
+Definimos el área de Guanacaste como área de estudio debido a que es un territorio que cuenta con 2 sitios Ramsar: el Embalse Arenal (8,317 ha) y el humedal del PN Palo Verde los cuales son sitios de reproducción y alimentación para una gran cantidad de especies de aves acuáticas, migratorias y residentes. Estos humedales funcionan como refugio de especies en peligro de extinción y constituye una de las zonas de anidamiento más grandes del país (SINAC,2020 y 2024)
+
+Nuestro objeto de estudio son las aves: Dendrocygna autumnalis, Spatula discors, Jabiru mycteria, Mycteria americana, Eudocimus albus. Estas especies tienen una vida vinculada a los humedales, pues sus poblaciones y ciclos de vida dependen de  estos ecosistemas (alimentación, reproducción, anidación, etc). Todas son residentes a excepción Spatula discors que tiene un periodo de migración al norte, entre septiembre y abril, para reproducirse (Barchiesi et al., 2021).
+
+
+# Cargar datos aves y área de estudio
+```{r}
+#| label: carga-datos
+#| warning: false
+#| message: false
+
+# Lectura de un archivo TXT con registros de presencia de aves en Costa Rica
+
+puntos <- read.delim(
+  "C:/Users/laura/OneDrive - Universidad de Costa Rica/Monitoreo_ambiental/Aves_Palo_Verde/Ebird/Ebird data Guanacaste/ebd_CR-G_200701_202412_unv_smp_relSep-2024/ebd_CR-G_200701_202412_unv_smp_relSep-2024.txt"
+)
+
+# Cargar shape Guanacaste
+
+guanacaste <- st_read("C:/Users/laura/OneDrive - Universidad de Costa Rica/Monitoreo_ambiental/Monitoreo_Palo_Verde/Guanacaste/delimitshapes/guanacaste.shp",
+    quiet = TRUE)
+```
+
+# Filtrar especies seleccionadas
+```{r}
+#| label: seleccion-especies
+
+
+# Filtrar las especies de aves de interés
+
+especies_seleccionadas <- puntos |> 
+  filter(SCIENTIFIC.NAME == "Dendrocygna autumnalis" |
+         SCIENTIFIC.NAME == "Spatula discors" |
+         SCIENTIFIC.NAME == "Jabiru mycteria" |
+         SCIENTIFIC.NAME == "Mycteria americana" |
+         SCIENTIFIC.NAME == "Eudocimus albus")
+
+```
+
+# Definición espacial: sistema referenciado de coordenadas.
+```{r}
+#| label: objeto-espacial
+
+# Convertir a objeto espacial usando columnas de coordenadas
+
+especies_seleccionadas <- st_as_sf(
+  especies_seleccionadas,
+  coords = c("LONGITUDE", "LATITUDE"),  # Nombres exactos de las columnas
+  remove = FALSE, # conservar las columnas de las coordenadas
+  crs = 4326  # Sistema de referencia WGS84 (EPSG:4326)
+)
+
+
+# Asignación de un CRS al objeto guanacaste
+guanacaste <-
+  guanacaste |>
+  st_transform(4326)
+
+```
+
+#Dar formato de fecha a la columna correspondiente
+```{r}
+#| label: formato-fecha
+ 
+especies_seleccionadas$OBSERVATION.DATE <- as.Date(especies_seleccionadas$OBSERVATION.DATE, format = "%Y-%m-%d")
+
+```
+
+# Graficar registros de presencia por año por especie
+
+Podemos observar la cantidad de registros de las especies dependen del interés de las y los observadores, por lo que especies interesantes o difíciles de conseguir presentan muchos registros, como el Mycteria americana,  a diferencia de aquellas que son más especies más comunes y por tanto más fáciles de encontrar como Dendrocygna autumnalis
+```{r}
+#| label: presencia-anual
+#| warning: false
+#| message: false
+
+
+# Gráfico ggplot2
+grafico_ggplot2 <-
+  especies_seleccionadas |>
+  st_drop_geometry() |>
+  group_by(year = year(OBSERVATION.DATE), SCIENTIFIC.NAME) |>
+  summarize(n = n()) |>
+  ggplot(aes(x = year, y = n, color=SCIENTIFIC.NAME)) +
+  geom_line() +
+  geom_point(
+    aes(
+      text = paste0(
+        "Año: ", year, "\n",
+        "Cantidad de registros: ", n
+      )
+    )
+  ) +
+  ggtitle("Cantidad de registros de presencia por año") +
+  xlab("Año") +
+  ylab("Cantidad de registros de presencia") +
+  labs(caption = "Fuente: eBird") +
+  theme_minimal()
+
+# Gráfico plotly
+ggplotly(grafico_ggplot2, tooltip = "text") |> 
+  config(locale = 'es')
+```
+
+# Gráfico de barras anual
+Se muestra la cantidad de individuos por especie registrados cada año. Se puede observar que los patos presentan mayor número de individuos (Dendrocygna autumnalis y Spatula discors).
+
+```{r}
+#| label: grafico-barras
+#| warning: false
+#| message: false
+
+# Agrupo y cuento los individuos por año
+df <- especies_seleccionadas |>
+  group_by(SCIENTIFIC.NAME, year = year(OBSERVATION.DATE)) |>
+  summarise(
+    individuos = sum(as.numeric(OBSERVATION.COUNT), na.rm = TRUE)
+  ) # Elimino nans
+
+
+# Gráfico de barras
+graf_barras <- df |>
+  ggplot(aes(x = as.factor(year), y = individuos, fill = as.factor(SCIENTIFIC.NAME))) + 
+  geom_bar(
+    stat = "identity",
+    aes(
+      text = paste0(
+        " Individuos por año: ", round(individuos, 2)
+      )
+    )
+  ) +
+  ggtitle("Número de Individuos por Año") +
+  xlab("Año") +
+  ylab("Cantidad de Individuos") +
+  labs(caption = "Fuente: Datos de eBird", fill = "Especies") +
+  theme_minimal() 
+ # scale_fill_manual(values = colores, name = "Año")  # Pongo los colores definidos y nombre a la leyenda
+
+# Gráfico interactivo con Plotly
+ggplotly(graf_barras, tooltip = "text") |> 
+  config(locale = 'es')
+
+
+```
+
+# Cargar los archivos de Clima
+
+```{r}
+#| label: cargar-clima
+#| warning: false
+#| message: false
+
+# Definir el directorio de los datos climáticos
+ruta_clima <- "C:/Users/laura/OneDrive - Universidad de Costa Rica/Monitoreo_ambiental/Aves_Palo_Verde/Modelos/climate/bios/"
+
+# Listar los archivos .tif en el directorio
+archivos_clima <- list.files(ruta_clima, pattern = "\\.tif$", full.names = TRUE)
+
+# Cargar todos los archivos raster
+bios <- rast(archivos_clima)
+
+names(bios)
+
+```
+
+# Recortar área de estudio
+
+```{r}
+#| label: cut-area
+#| warning: false
+#| message: false
+
+# Definir la extensión del área de estudio
+area_estudio <- ext(
+  min(especies_seleccionadas$LONGITUDE) - 5, 
+  max(especies_seleccionadas$LONGITUDE) + 5,
+  min(especies_seleccionadas$LATITUDE) - 5, 
+  max(especies_seleccionadas$LATITUDE) + 5
+)
+
+# Recortar las variables bioclimáticas al área de estudio
+clima <- crop(bios, area_estudio)
+```
+
+# Cargar datos de humedales
+Nosotras utilizamos la capa de  Global Lakes and Wetlands Database: GLWD_v2_delta_area_ha_x10, que indica el porcentaje de cobertura de humedales, que para éste análisis es adecuado puesto que las aves y sus hábitos de vida están relacionados a ellos. 
+
+```{r}
+#| label: datos-humedales
+#| warning: false
+#| message: false
+
+ruta_humedal <- "C:/Users/laura/OneDrive - Universidad de Costa Rica/Monitoreo_ambiental/Aves_Palo_Verde/GLWD_v2_delta_combined_classes_tif/GLWD_v2_delta_combined_classes/GLWD_v2_delta_area_ha_x10.tif"
+
+
+archivo_humedales <- rast(ruta_humedal)
+
+# Recortar y resamplear 'humedales' para que tenga la misma extensión y resolución que 'clima'
+humedales <- archivo_humedales |>
+  crop(ext(clima)) |>
+  resample(clima)
+
+```
+
+# Unir datos de clima y humedales en un mismo ráster
+
+```{r}
+#| unir-capas
+
+# Unir las capas de clima y de humedales
+datos <- c(clima, humedales)
+
+```
+
+# Entrenamiento del modelo MaxEnt
+
+## Se crea un DataFrame con las coordenadas de Longitud y Latitud
+
+```{r}
+#| label: df-coodenadas
+
+# Crear dataframe con columnas de longitud y latitud
+coordenadas_presencia <- data.frame(
+  decimalLongitude = especies_seleccionadas$LONGITUDE,
+  decimalLatitude = especies_seleccionadas$LATITUDE
+)
+
+# Eliminar coordenadas duplicadas
+coordenadas_presencia <- unique(coordenadas_presencia)
+```
+
+## Crear semilla para garantizar aleatoriedad reproducible
+
+```{r}
+#| label: seed
+#| warning: false
+#| message: false
+
+# Establecer una "semilla" para garantizar que la selección aleatoria sea reproducible
+set.seed(123)
+
+# Cantidad de registros de presencia
+n_presencia <- nrow(coordenadas_presencia)
+
+# Con sample(), se selecciona aleatoriamente una proporción (ej. 0.7) 
+# de los índices de los datos de presencia para el conjunto de entrenamiento
+indices_entrenamiento <- sample(
+  1:n_presencia, 
+  size = round(0.7 * n_presencia)
+)
+
+# Crear el subconjunto de entrenamiento utilizando los índices seleccionados
+entrenamiento <- coordenadas_presencia[indices_entrenamiento, ]
+
+# Crear el subconjunto de evaluación con los datos restantes
+evaluacion <- coordenadas_presencia[-indices_entrenamiento, ]
+```
+
+## Cambiar formato a ráster y ejecutar el modelo
+
+```{r}
+#| label: formato-raster
+#| warning: false
+#| message: false
+
+
+# Los datos de clima deben convertirse al formato que usa el paquete raster
+# debido a que es este el que acepta el paquete dismo
+  
+datos <- raster::stack(datos)
+
+# Ejecutar el modelo
+modelo_maxent <- maxent(x = datos, p = entrenamiento)
+
+# Aplicar el modelo entrenado a las variables climáticas 
+# para generar un mapa de idoneidad del hábitat
+prediccion <- predict(modelo_maxent, datos)
+```
+
+## Evaluacion del modelo MaxEnt
+
+```{r}
+#| label: evaluar
+#| warning: false
+#| message: false
+
+# terra::extract() extrae los valores del raster de predicción 
+# en las coordenadas de evaluación
+# eval_pres almacena los valores de idoneidad predichos 
+# en los puntos de evaluación de presencia 
+
+eval_pres <- terra::extract(
+  prediccion, 
+  evaluacion[, c('decimalLongitude', 'decimalLatitude')]
+)
+
+# Generar puntos aleatorios dentro del área de estudio definida. 
+# Estos puntos se asumen como ausencias de la especie.
+ausencias <- randomPoints(mask = datos, n = 1000)
+
+# eval_aus almacena los valores de idoneidad predichos
+# en los puntos de ausencia
+eval_aus <- terra::extract(
+  prediccion, 
+  ausencias
+)
+
+# Generar estadísticas de evaluación del modelo
+resultado_evaluacion <- evaluate(p = eval_pres, a = eval_aus)
+```
+
+## Curva ROC
+
+La curva ROC y los valores del área bajo la curva (AUC) dan un buen ajuste, puesto que el modelo está prediciendo de buena manera la distribución de las aves que ingresamos.  El valor de AUC corresponde a 0.99 y en esta ocasión y en un intento anterior 0.993, lo cual es muy cercamp a 1 por lo que el modelo encaja de buena manera con la distribución real. 
+
+```{r}
+#| label: curva-roc
+#| warning: false
+#| message: false
+
+# Datos para graficar la curva ROC
+datos_roc <- data.frame(
+  FPR = resultado_evaluacion@FPR,
+  TPR = resultado_evaluacion@TPR,
+  Umbral = resultado_evaluacion@t
+)
+
+# Valor AUC
+auc <- resultado_evaluacion@auc
+
+# Gráfico ggplot2
+grafico_ggplot2 <-
+  ggplot(
+    datos_roc, 
+    aes(
+      x = FPR, 
+      y = TPR,
+      u = Umbral
+    )
+  ) +
+  geom_line(
+    color = "blue", 
+    size = 1
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = paste("Curva ROC (AUC =", round(auc, 3), ")"),
+       x = "Tasa de falsos positivos (FPR)",
+       y = "Tasa de verdaderos positivos (TPR)") +
+  theme_minimal()
+
+# Gráfico plotly
+ggplotly(grafico_ggplot2) |> 
+  config(locale = 'es')
+```
+
+# Graficar mapa de distribución continua
+
+En este mapa se muestra en un rango de 0 a 1, donde cero es ausencia y presencia, la posiblidad de que las aves estén presentes. Esto da un mapa con degradado donde encontramos áreas con alta probabilidad de presencia cercanas a los humedales y zonas altas y baja probabilidad en zonas bajas y con menos precipitación. 
+
+```{r}
+#| label: grafico-distribucion-continua
+#| warning: false
+#| message: false
+
+# Paleta de colores del modelo
+colores_modelo <- colorNumeric(
+  palette = c("white", "black"),
+  values(prediccion),
+  na.color = "transparent"
+)
+
+# Paleta de colores de temperatura
+colores_temperatura <- colorNumeric(
+  # palette = "inferno",
+  # palette = "magma",
+  palette = rev(brewer.pal(11, "RdYlBu")),
+  values(datos$wc2.1_30s_bio_1),
+  na.color = "transparent"
+)
+
+# Paleta de colores de precipitación
+colores_precipitacion <- colorNumeric(
+  # palette = "viridis",
+  # palette = "YlGnBu",  
+  palette = "Blues",
+  values(datos$wc2.1_30s_bio_12),
+  na.color = "transparent"
+)
+
+# Paleta de colores de precipitación
+colores_humedales <- colorNumeric(
+  # palette = "viridis",
+  # palette = "YlGnBu",  
+  palette = "YlGnBu",
+  values(datos$Band_1),
+  na.color = "transparent"
+)
+
+# Crear una paleta de colores categórica para las especies
+especies_unicas <- unique(especies_seleccionadas$SCIENTIFIC.NAME)
+paleta_especies <- colorFactor(
+  palette = brewer.pal(length(especies_unicas), "Set1"),
+  domain = especies_unicas
+)
+
+# Mapa
+leaflet() |>
+  addTiles(group = "Mapa general") |>
+  addProviderTiles(
+    providers$Esri.WorldImagery, 
+    group = "Imágenes satelitales"
+  ) |>  
+  addProviderTiles(
+    providers$CartoDB.Positron, 
+    group = "Mapa blanco"
+  ) |>
+  addRasterImage( # capa raster de temperatura
+    datos$wc2.1_30s_bio_1,
+    colors = colores_temperatura, # paleta de colores
+    opacity = 0.6,
+    group = "Temperatura",
+  ) |>
+  addRasterImage( # capa raster de precipitación
+    datos$wc2.1_30s_bio_12,
+    colors = colores_precipitacion, # paleta de colores
+    opacity = 0.6,
+    group = "Precipitación",
+  )  |>
+  addRasterImage( # capa raster de humedales
+    datos$Band_1,
+    colors = colores_humedales, # paleta de colores
+    opacity = 0.6,
+    group = "Humedales",
+  )  |>
+  addRasterImage( # capa raster del modelo de distribución
+    prediccion,
+    colors = colores_modelo,
+    opacity = 0.6,
+    group = "Modelo de distribución",
+  ) |>  
+  addCircleMarkers(
+    # capa de registros de presencia (puntos)
+    data = especies_seleccionadas,
+    stroke = F,
+    radius = 3,
+    fillColor = ~paleta_especies(SCIENTIFIC.NAME),
+    fillOpacity = 1,
+    popup = paste(
+      paste0("<strong>Nombre Científico: </strong>", especies_seleccionadas$SCIENTIFIC.NAME),
+      paste0("<strong>Cantidad de individuos: </strong>", especies_seleccionadas$OBSERVATION.COUNT),
+      paste0("<strong>Fecha de avistamiento: </strong>", especies_seleccionadas$OBSERVATION.DATE),
+      paste0("<strong>Fecha de avistamiento: </strong>", especies_seleccionadas$COMMON.NAME),
+      paste0("<a href='", especies_seleccionadas$GLOBAL.UNIQUE.IDENTIFIER, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    group = "Registros de aves"
+    ) |>  
+  addLegend(
+    title = "Temperatura",
+    values = values(datos$wc2.1_30s_bio_1),
+    pal = colores_temperatura,
+    position = "bottomleft",
+    group = "Temperatura"
+  ) |>
+  addLegend(
+    title = "Precipitación",
+    values = values(datos$wc2.1_30s_bio_12),
+    pal = colores_precipitacion,
+    position = "bottomleft",
+    group = "Precipitación"
+  ) |>
+  addLegend(
+    title = "Humedales",
+    values = values(datos$Band_1),
+    pal = colores_humedales,
+    position = "bottomleft",
+    group = "Precipitación"
+  ) |>
+  addLegend(
+    title = "Modelo de distribución",
+    values = values(prediccion),
+    pal = colores_modelo,
+    position = "bottomright",
+    group = "Modelo de distribución"
+  ) |>  
+  addLayersControl(
+    # control de capas
+    baseGroups = c("Mapa general", "Imágenes satelitales", "Mapa blanco"),
+    overlayGroups = c(
+      "Temperatura",
+      "Precipitación",
+      "Humedales",
+      "Modelo de distribución",
+      "Registros de aves"
+    )
+  ) |>
+  hideGroup("Temperatura") |>
+  hideGroup("Precipitación") |>
+  hideGroup("Humedales")
+
+```
+
+# Generar mapa binario
+En este mapa se muestra sólamente si pueda haber o no las aves, no hay rangos de probabilidad. Solo presencia en color azul y ausencia en pixel transparente. 
+```{r}
+#| label: distribucion-binaria
+#| warning: false
+#| message: false
+
+# Definir el umbral
+umbral <- 0.5
+
+# Crear el raster binario
+prediccion_binaria <- (prediccion >= umbral) * 1
+
+# Crear la paleta de colores para el raster binario
+colores_prediccion_binaria <- colorFactor(
+  palette = c("transparent", "blue"),  # "transparent" para las áreas no adecuadas
+  domain = c(0, 1),
+  na.color = "transparent"
+)
+
+# Mapa
+leaflet() |>
+  addTiles(group = "Mapa general") |>
+  addProviderTiles(
+    providers$Esri.WorldImagery, 
+    group = "Imágenes satelitales"
+  ) |>
+  addProviderTiles(
+    providers$CartoDB.Positron, 
+    group = "Mapa blanco"
+  ) |>
+  addRasterImage(
+    prediccion_binaria,
+    colors = colores_prediccion_binaria,
+    opacity = 0.6,
+    group = "Modelo de distribución binario",
+  ) |>
+  addCircleMarkers(
+    # capa de registros de presencia (puntos)
+    data = especies_seleccionadas,
+    stroke = F,
+    radius = 3,
+    fillColor = ~paleta_especies(SCIENTIFIC.NAME),
+    fillOpacity = 1,
+    popup = paste(
+      paste0("<strong>Nombre Científico: </strong>", especies_seleccionadas$SCIENTIFIC.NAME),
+      paste0("<strong>Cantidad de individuos: </strong>", especies_seleccionadas$OBSERVATION.COUNT),
+      paste0("<strong>Fecha de avistamiento: </strong>", especies_seleccionadas$OBSERVATION.DATE),
+      paste0("<strong>Fecha de avistamiento: </strong>", especies_seleccionadas$COMMON.NAME),
+      paste0("<a href='", especies_seleccionadas$GLOBAL.UNIQUE.IDENTIFIER, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    group = "Registros de aves"
+  ) |>
+  addLegend(
+    title = "Modelo de distribución binario",
+    labels = c("Ausencia", "Presencia"),
+    colors = c("transparent", "blue"),
+    position = "bottomright",
+    group = "Modelo de distribución binario"
+  ) |>
+  addLayersControl(
+    baseGroups = c("Mapa general", "Imágenes satelitales", "Mapa blanco"),
+    overlayGroups = c(
+      "Modelo de distribución binario",
+      "Registros de aves"
+    )
+  )
+```
+
+# Referencias
+
+* Barchiesi, S., Alonso, A., Pazmiño-Hernandez, M., Serrano-Sandí, J. M., Muñoz-Carpena, R., & Angelini, C. (2022). Wetland hydropattern and vegetation greenness predict avian populations in Palo Verde, Costa Rica. Ecological Applications: A Publication of the Ecological Society of America, 32(2). https://doi.org/10.1002/eap.2493
+
+* eBird Basic Dataset. Version: EBD_relSep-2024. Cornell Lab of Ornithology, Ithaca, New York. Sep 2024.
+
+* SINAC (2020) Plan General de Manejo Parque Nacional Palo Verde 2013-2023, Volúmen 1: Diagnóstico, Sistema Nacional de Área de Conservación, Costa Rica.  
+
+* SINAC (2024) Área de Conservación Arenal-Tempisque. Sistema Nacional de Áreas de Conservación, Costa Rica.  Recuperado de: https://www.sinac.go.cr/es/ac/acat/paginas/default.aspx  
+
+* Global climate and weather data — WorldClim 1 documentation. (s/f). Worldclim.org. Recuperado el 28 de noviembre de 2024, de https://www.worldclim.org/data/index.html 
